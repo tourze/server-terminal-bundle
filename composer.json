@@ -14,15 +14,15 @@
     "symfony/config": "^6.4",
     "symfony/dependency-injection": "^6.4",
     "symfony/doctrine-bridge": "^6.4",
+    "symfony/framework-bundle": "^6.4",
+    "symfony/http-foundation": "^6.4",
     "symfony/http-kernel": "^6.4",
+    "symfony/routing": "^6.4",
     "symfony/serializer": "^6.4",
-    "tourze/arrayable": "0.0.*",
-    "tourze/biz-user-bundle": "0.0.*",
-    "tourze/doctrine-indexed-bundle": "0.0.*",
-    "tourze/doctrine-timestamp-bundle": "0.0.*",
-    "tourze/doctrine-track-bundle": "0.1.*",
+    "symfony/yaml": "^6.4 || ^7.1",
+    "tourze/bundle-dependency": "0.0.*",
     "tourze/easy-admin-attribute": "0.1.*",
-    "tourze/enum-extra": "~0.0.5"
+    "tourze/symfony-routing-auto-loader-bundle": "0.0.*"
   },
   "require-dev": {
     "phpstan/phpstan": "^2.1",
