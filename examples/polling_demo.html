@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH HTTP 轮询演示</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        input, button {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        input {
+            width: 200px;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .terminal {
+            background: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            border-radius: 4px;
+            min-height: 400px;
+            max-height: 600px;
+            overflow-y: auto;
+            margin: 20px 0;
+            white-space: pre-wrap;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .command-input {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .command-input input {
+            flex: 1;
+            max-width: 400px;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .polling-info {
+            background: #e2e3e5;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        
+        .polling-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .stat-item {
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+            border: 1px solid #ccc;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SSH HTTP 轮询演示</h1>
+            <p>这个演示展示了如何使用 HTTP 轮询技术实现 SSH 终端交互</p>
+        </div>
+
+        <div class="form-group">
+            <label>服务器连接:</label>
+            <input type="text" id="host" placeholder="localhost" value="localhost">
+            <input type="text" id="user" placeholder="用户名" value="testuser">
+            <input type="password" id="password" placeholder="密码 (可选)">
+            <button id="connectBtn" onclick="connect()">连接</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>断开连接</button>
+        </div>
+
+        <div id="status" class="status info">
+            状态: 未连接
+        </div>
+
+        <div class="polling-info">
+            <h3>轮询统计</h3>
+            <div class="polling-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="pollCount">0</div>
+                    <div class="stat-label">轮询次数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="pollInterval">1000</div>
+                    <div class="stat-label">轮询间隔(ms)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="responseTime">0</div>
+                    <div class="stat-label">平均响应时间(ms)</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="outputReceived">0</div>
+                    <div class="stat-label">接收字节数</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="command-input">
+            <input type="text" id="commandInput" placeholder="输入命令..." disabled>
+            <button id="sendBtn" onclick="sendCommand()" disabled>发送</button>
+            <button onclick="clearTerminal()">清屏</button>
+        </div>
+
+        <div id="terminal" class="terminal">
+SSH HTTP 轮询终端演示
+====================
+
+这是一个模拟的终端界面，展示了 HTTP 轮询方案的工作原理：
+
+1. 连接建立后，前端会每隔一定时间向服务器发送轮询请求
+2. 服务器返回 SSH 进程的最新输出
+3. 用户输入的命令通过 HTTP POST 发送到服务器
+4. 服务器将命令写入 SSH 进程的 stdin
+
+注意：这是一个概念演示，实际的 SSH 连接需要服务端支持。
+
+请点击"连接"按钮开始模拟...
+        </div>
+    </div>
+
+    <script>
+        class SshPollingClient {
+            constructor() {
+                this.sessionId = null;
+                this.isConnected = false;
+                this.pollTimer = null;
+                this.pollInterval = 1000; // 1秒
+                this.pollCount = 0;
+                this.totalResponseTime = 0;
+                this.outputReceived = 0;
+                
+                // 绑定回车键发送命令
+                document.getElementById('commandInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.sendCommand();
+                    }
+                });
+            }
+
+            async connect(host, user, password) {
+                try {
+                    this.updateStatus('正在连接...', 'info');
+                    
+                    // 模拟 API 调用
+                    const response = await this.mockApiCall('/api/ssh/create', {
+                        host: host,
+                        user: user,
+                        password: password
+                    });
+                    
+                    if (response.session_id) {
+                        this.sessionId = response.session_id;
+                        this.isConnected = true;
+                        this.startPolling();
+                        this.updateStatus(`已连接到 ${user}@${host} (会话: ${this.sessionId.substring(0, 8)}...)`, 'success');
+                        this.appendToTerminal(`\n[${new Date().toLocaleTimeString()}] 已连接到 ${user}@${host}\n`);
+                        this.updateUI();
+                        return true;
+                    } else {
+                        throw new Error(response.error || '连接失败');
+                    }
+                } catch (error) {
+                    this.updateStatus(`连接失败: ${error.message}`, 'error');
+                    return false;
+                }
+            }
+
+            async disconnect() {
+                if (!this.isConnected) return;
+                
+                try {
+                    this.stopPolling();
+                    
+                    if (this.sessionId) {
+                        await this.mockApiCall('/api/ssh/close', {
+                            session_id: this.sessionId
+                        });
+                    }
+                    
+                    this.sessionId = null;
+                    this.isConnected = false;
+                    this.resetStats();
+                    this.updateStatus('已断开连接', 'info');
+                    this.appendToTerminal(`\n[${new Date().toLocaleTimeString()}] 连接已断开\n`);
+                    this.updateUI();
+                } catch (error) {
+                    this.updateStatus(`断开连接时出错: ${error.message}`, 'error');
+                }
+            }
+
+            async sendCommand(command) {
+                if (!this.isConnected || !command) return;
+                
+                try {
+                    this.appendToTerminal(`$ ${command}\n`);
+                    
+                    const response = await this.mockApiCall('/api/ssh/command', {
+                        session_id: this.sessionId,
+                        command: command
+                    });
+                    
+                    if (!response.success) {
+                        this.appendToTerminal(`错误: 命令发送失败\n`);
+                    }
+                } catch (error) {
+                    this.appendToTerminal(`错误: ${error.message}\n`);
+                }
+            }
+
+            startPolling() {
+                this.stopPolling();
+                this.pollTimer = setInterval(() => {
+                    this.poll();
+                }, this.pollInterval);
+            }
+
+            stopPolling() {
+                if (this.pollTimer) {
+                    clearInterval(this.pollTimer);
+                    this.pollTimer = null;
+                }
+            }
+
+            async poll() {
+                if (!this.isConnected) return;
+                
+                const startTime = Date.now();
+                
+                try {
+                    const response = await this.mockApiCall('/api/ssh/poll', {
+                        session_id: this.sessionId
+                    });
+                    
+                    const responseTime = Date.now() - startTime;
+                    this.updatePollingStats(responseTime);
+                    
+                    if (response.new_output && response.new_output.length > 0) {
+                        this.appendToTerminal(response.new_output);
+                        this.outputReceived += response.new_output.length;
+                        this.adaptivePolling(true);
+                    } else {
+                        this.adaptivePolling(false);
+                    }
+                    
+                    this.updateStatsDisplay();
+                } catch (error) {
+                    console.error('轮询出错:', error);
+                    this.adaptivePolling(false);
+                }
+            }
+
+            adaptivePolling(hasOutput) {
+                // 自适应轮询间隔
+                if (hasOutput) {
+                    // 有输出时减少间隔
+                    this.pollInterval = Math.max(500, this.pollInterval - 100);
+                } else {
+                    // 无输出时增加间隔
+                    this.pollInterval = Math.min(3000, this.pollInterval + 200);
+                }
+                
+                // 重启轮询定时器
+                this.startPolling();
+            }
+
+            updatePollingStats(responseTime) {
+                this.pollCount++;
+                this.totalResponseTime += responseTime;
+            }
+
+            resetStats() {
+                this.pollCount = 0;
+                this.totalResponseTime = 0;
+                this.outputReceived = 0;
+                this.pollInterval = 1000;
+                this.updateStatsDisplay();
+            }
+
+            updateStatsDisplay() {
+                document.getElementById('pollCount').textContent = this.pollCount;
+                document.getElementById('pollInterval').textContent = this.pollInterval;
+                document.getElementById('responseTime').textContent = 
+                    this.pollCount > 0 ? Math.round(this.totalResponseTime / this.pollCount) : 0;
+                document.getElementById('outputReceived').textContent = this.outputReceived;
+            }
+
+            appendToTerminal(text) {
+                const terminal = document.getElementById('terminal');
+                terminal.textContent += text;
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            clearTerminal() {
+                document.getElementById('terminal').textContent = '';
+            }
+
+            updateStatus(message, type) {
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = `状态: ${message}`;
+                statusEl.className = `status ${type}`;
+            }
+
+            updateUI() {
+                const connectBtn = document.getElementById('connectBtn');
+                const disconnectBtn = document.getElementById('disconnectBtn');
+                const commandInput = document.getElementById('commandInput');
+                const sendBtn = document.getElementById('sendBtn');
+                
+                connectBtn.disabled = this.isConnected;
+                disconnectBtn.disabled = !this.isConnected;
+                commandInput.disabled = !this.isConnected;
+                sendBtn.disabled = !this.isConnected;
+                
+                if (this.isConnected) {
+                    commandInput.focus();
+                }
+            }
+
+            // 模拟 API 调用
+            async mockApiCall(endpoint, data) {
+                // 模拟网络延迟
+                await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+                
+                // 模拟不同的 API 响应
+                switch (endpoint) {
+                    case '/api/ssh/create':
+                        if (data.host && data.user) {
+                            return {
+                                session_id: 'mock_session_' + Math.random().toString(36).substring(7),
+                                status: 'created'
+                            };
+                        } else {
+                            return { error: '主机和用户名不能为空' };
+                        }
+                    
+                    case '/api/ssh/command':
+                        // 模拟命令响应
+                        setTimeout(() => {
+                            this.simulateCommandOutput(data.command);
+                        }, 200 + Math.random() * 300);
+                        return { success: true };
+                    
+                    case '/api/ssh/poll':
+                        // 大部分时候返回空输出
+                        if (Math.random() < 0.8) {
+                            return { new_output: '', full_output: '', timestamp: Date.now() };
+                        } else {
+                            // 偶尔返回一些模拟输出
+                            const outputs = [
+                                '处理中...\n',
+                                '完成\n',
+                                `[${new Date().toLocaleTimeString()}] 系统消息\n`,
+                                'OK\n'
+                            ];
+                            return {
+                                new_output: outputs[Math.floor(Math.random() * outputs.length)],
+                                full_output: '',
+                                timestamp: Date.now()
+                            };
+                        }
+                    
+                    case '/api/ssh/close':
+                        return { success: true };
+                    
+                    default:
+                        return { error: '未知的 API 端点' };
+                }
+            }
+
+            simulateCommandOutput(command) {
+                // 模拟不同命令的输出
+                let output = '';
+                switch (command.toLowerCase()) {
+                    case 'ls':
+                    case 'ls -la':
+                        output = `total 64
+drwxr-xr-x  8 user user  4096 Jan  1 12:00 .
+drwxr-xr-x  3 user user  4096 Jan  1 12:00 ..
+-rw-r--r--  1 user user   220 Jan  1 12:00 .bash_logout
+-rw-r--r--  1 user user  3526 Jan  1 12:00 .bashrc
+drwxr-xr-x  2 user user  4096 Jan  1 12:00 Documents
+drwxr-xr-x  2 user user  4096 Jan  1 12:00 Downloads
+`;
+                        break;
+                    case 'pwd':
+                        output = '/home/user\n';
+                        break;
+                    case 'whoami':
+                        output = 'user\n';
+                        break;
+                    case 'date':
+                        output = new Date().toString() + '\n';
+                        break;
+                    case 'ps':
+                        output = `  PID TTY          TIME CMD
+ 1234 pts/0    00:00:01 bash
+ 5678 pts/0    00:00:00 ps
+`;
+                        break;
+                    default:
+                        if (command.startsWith('echo ')) {
+                            output = command.substring(5) + '\n';
+                        } else {
+                            output = `模拟执行: ${command}\n执行完成\n`;
+                        }
+                }
+                
+                this.appendToTerminal(output);
+            }
+        }
+
+        // 全局实例
+        const sshClient = new SshPollingClient();
+
+        // 全局函数
+        function connect() {
+            const host = document.getElementById('host').value || 'localhost';
+            const user = document.getElementById('user').value || 'testuser';
+            const password = document.getElementById('password').value;
+            
+            sshClient.connect(host, user, password);
+        }
+
+        function disconnect() {
+            sshClient.disconnect();
+        }
+
+        function sendCommand() {
+            const input = document.getElementById('commandInput');
+            const command = input.value.trim();
+            
+            if (command) {
+                sshClient.sendCommand(command);
+                input.value = '';
+            }
+        }
+
+        function clearTerminal() {
+            sshClient.clearTerminal();
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            sshClient.updateUI();
+            sshClient.updateStatsDisplay();
+        });
+    </script>
+</body>
+</html>
